@@ -13,14 +13,14 @@ the narrative on top of it and run both locally and on Google Colab.
 
 | Notebook | What it covers |
 |---|---|
-| [`01_representations.ipynb`](notebooks/01_representations.ipynb) | Event representations (raw events, event frames, time surfaces, voxel grids, APS frame overlay) on N-MNIST or our own DAVIS346 `.aedat4` recordings. |
+| [`01_representations.ipynb`](notebooks/01_representations.ipynb) | Event representations (raw events, event frames, time surfaces, voxel grids, stored-frame overlay) on N-MNIST or our own DAVIS346 `.aedat4` recordings. |
 | [`02_cmax_optical_flow_dsec.ipynb`](notebooks/02_cmax_optical_flow_dsec.ipynb) | Contrast maximization optical flow on DSEC (`thun_00_a`), evaluated against DSEC-Flow ground truth. |
 
 ## Repo layout
 
 ```
 evcam/                  installable package
-  io.py                 load_aedat4, crop_time, DSEC loading (events, rectify map, flow GT)
+  io.py                 load_aedat4, crop_time, frames_look_accumulated, DSEC loading (events, rectify map, flow GT)
   representations.py    time surface, signed event image
   cmax.py               iwe, contrast, cmax_patch, patchwise_flow
   deblur.py             stub (EDI and deconvolution come later)

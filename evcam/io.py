@@ -1,6 +1,7 @@
 """Loading event data: DV .aedat4 recordings (DAVIS346) and DSEC sequences."""
 
 import glob
+import warnings
 
 import aedat
 import cv2
@@ -29,12 +30,17 @@ def load_aedat4(path):
     -------
     events : structured array of shape (N,) with fields (x, y, t, p),
         t in microseconds starting at 0, p in {0, 1}
-    frames : list of dicts, one per grayscale APS frame, with keys
+    frames : list of dicts, one per frame in the file, with keys
         "t"                : frame timestamp, microseconds
         "exposure_begin_t" : start of the exposure, microseconds
         "exposure_end_t"   : end of the exposure, microseconds
         "image"            : (H, W) grayscale image
         All three times are on the same zeroed clock as the events.
+        These are whatever frame stream DV was told to record. That is the camera's APS
+        frames only if the capture node's `frames` output was wired to the file output;
+        if the Accumulator module was wired in instead, they are images rendered from the
+        events. `frames_look_accumulated` tells the two apart, and a warning is raised
+        here when the frames look event-built.
     sensor_size : (W, H, 2)
     """
     decoder = aedat.Decoder(path)
@@ -62,7 +68,62 @@ def load_aedat4(path):
 
     frames = [{"t": t - t0, "exposure_begin_t": tb - t0, "exposure_end_t": te - t0, "image": img}
               for t, tb, te, img in raw_frames]
+    flagged, why = frames_look_accumulated(frames)
+    if flagged:
+        warnings.warn(f"{path}: the frames look like DV Accumulator output (rendered from events), "
+                      f"not APS sensor frames ({why['summary']}). They are fine to look at, but "
+                      "frame-based deblurring (EDI, EFNet) is not meaningful on them.", stacklevel=2)
     return events, frames, sensor_size
+
+
+def frames_look_accumulated(frames, n_check=20):
+    """Heuristic: are these frames DV Accumulator output (built from events) rather than APS?
+
+    Two signatures, either of which flags the recording:
+    - Quantized histogram. The Accumulator adds a fixed step per event (default 0.15 of
+      full scale, i.e. 38 grey levels) to a flat background, so a few exact grey values
+      hold most of the non-saturated pixels. Photon and read noise spread a real sensor
+      frame over many levels.
+    - Exposure equal to the frame period. The Accumulator stamps each image with its
+      accumulation window, which is exactly the time between frames. A real shutter is
+      shorter than the frame period.
+
+    Parameters
+    ----------
+    frames : list of frame dicts from `load_aedat4`
+    n_check : number of frames (evenly spaced) used for the histogram test
+
+    Returns
+    -------
+    flagged : bool
+    info : dict with "quantized" (bool), "top3_fraction" (median share of non-saturated
+        pixels held by the 3 most common grey values), "exposure_equals_period" (bool),
+        "exposure_us", "period_us" and a one-line "summary"
+    """
+    if len(frames) < 2:
+        return False, {"quantized": False, "top3_fraction": 0.0, "exposure_equals_period": False,
+                       "exposure_us": None, "period_us": None, "summary": "too few frames to tell"}
+    fracs = []
+    for i in np.linspace(0, len(frames) - 1, min(n_check, len(frames))).astype(int):
+        img = np.asarray(frames[i]["image"])
+        hist = np.bincount(img[(img > img.min()) & (img < img.max())].ravel().astype(np.int64))
+        if hist.sum():
+            fracs.append(np.sort(hist)[-3:].sum() / hist.sum())
+    top3 = float(np.median(fracs)) if fracs else 0.0
+    quantized = top3 > 0.25      # real 8-bit sensor frames sit around 0.03-0.10
+
+    exposure = float(np.median([f["exposure_end_t"] - f["exposure_begin_t"] for f in frames]))
+    period = float(np.median(np.diff([f["t"] for f in frames])))
+    same = exposure > 0 and exposure == period
+
+    parts = []
+    if quantized:
+        parts.append(f"{top3:.0%} of non-saturated pixels sit on 3 grey values")
+    if same:
+        parts.append(f"exposure equals the frame period, {exposure / 1e3:.1f} ms")
+    return quantized or same, {"quantized": quantized, "top3_fraction": top3,
+                               "exposure_equals_period": same, "exposure_us": exposure,
+                               "period_us": period, "summary": "; ".join(parts) or "looks like APS"}
 
 
 def crop_time(events, t_start_us, duration_us):
