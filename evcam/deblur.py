@@ -105,6 +105,25 @@ def _divisor(E, c):
     return np.trapezoid(np.exp(c * E), axis=0) / (E.shape[0] - 1)
 
 
+class _SparseIntegral:
+    """`_divisor` for many values of c: only pixels that saw an event are recomputed.
+
+    Events touch a small part of the frame, and everywhere else the divisor is exactly 1.
+    The c searches evaluate the divisor ~30 times per frame, so this is most of their cost.
+    """
+
+    def __init__(self, E):
+        self.shape = E.shape[1:]
+        flat = E.reshape(E.shape[0], -1)
+        self.active = np.flatnonzero((flat != 0).any(axis=0))
+        self.E = np.ascontiguousarray(flat[:, self.active])
+
+    def divisor(self, c):
+        out = np.ones(self.shape[0] * self.shape[1])
+        out[self.active] = np.trapezoid(np.exp(c * self.E), axis=0) / (self.E.shape[0] - 1)
+        return out.reshape(self.shape)
+
+
 def edi_divisor(events, t_begin, t_end, t_ref, c, shape, n_bins=None):
     """EDI divisor: per pixel, the mean over the exposure of exp(c * E(t)).
 
@@ -244,12 +263,13 @@ def edi_select_c(blurry, events, t_begin, t_end, t_ref=None, c_range=(0.05, 0.6)
     """
     t_ref = (t_begin + t_end) / 2 if t_ref is None else t_ref
     E, n = event_integral(events, t_begin, t_end, t_ref, blurry.shape, n_bins)
+    E = _SparseIntegral(E)
     M = event_edge_map(events, t_begin, t_end, t_ref, blurry.shape, edge_window)
     tv0 = sum(np.abs(g).sum() for g in _grad(blurry)) + 1e-12
     terms = {}
 
     def objective(c):
-        gx, gy = _grad(np.clip(blurry / _divisor(E, c), 0, 1))
+        gx, gy = _grad(np.clip(blurry / E.divisor(c), 0, 1))
         tv = (np.abs(gx).sum() + np.abs(gy).sum()) / tv0
         corr = _ncc(np.hypot(gx, gy), M) if n else 0.0
         terms[c] = (tv, corr)
@@ -274,7 +294,8 @@ def edi_oracle_c(blurry, sharp, events, t_begin, t_end, t_ref=None, c_range=(0.0
     """
     t_ref = (t_begin + t_end) / 2 if t_ref is None else t_ref
     E, _ = event_integral(events, t_begin, t_end, t_ref, blurry.shape, n_bins)
-    mse = lambda c: float(np.mean((np.clip(blurry / _divisor(E, c), 0, 1) - sharp) ** 2))
+    E = _SparseIntegral(E)
+    mse = lambda c: float(np.mean((np.clip(blurry / E.divisor(c), 0, 1) - sharp) ** 2))
     c, cs, errs = _search_1d(mse, *c_range, n_coarse, tol)
     return c, {"c": cs, "psnr": -10 * np.log10(errs + 1e-12)}
 

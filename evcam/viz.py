@@ -29,3 +29,46 @@ def flow_to_rgb(flow, valid=None, max_mag=None):
     if valid is not None:
         rgb[~valid] = 0
     return rgb
+
+
+def show_images(images, titles=None, crop=None, figsize_per=(3.6, 3.2), suptitle=None, cmap="gray"):
+    """Show grayscale images in [0, 1] side by side on one fixed intensity scale.
+
+    Parameters
+    ----------
+    images : list of (H, W) arrays
+    titles : list of strings, same length
+    crop : optional (y0, y1, x0, x1) region shown instead of the full image
+    figsize_per : (width, height) of each panel in inches
+
+    Returns
+    -------
+    the matplotlib Figure
+    """
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(1, len(images), figsize=(figsize_per[0] * len(images), figsize_per[1]), squeeze=False)
+    for ax, img, title in zip(axes[0], images, titles or [""] * len(images)):
+        if crop is not None:
+            img = img[crop[0]:crop[1], crop[2]:crop[3]]
+        ax.imshow(img, cmap=cmap, vmin=0, vmax=1)
+        ax.set_title(title, fontsize=10)
+        ax.axis("off")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=11)
+    fig.tight_layout()
+    return fig
+
+
+def busiest_crop(events, shape, size=96):
+    """Square crop (y0, y1, x0, x1) centred where the event density is highest.
+
+    Used to zoom into the part of a frame where the blur is, without picking it by hand.
+    """
+    H, W = shape
+    counts = np.bincount(events["y"].astype(np.int64) * W + events["x"].astype(np.int64),
+                         minlength=H * W).reshape(H, W).astype(np.float32)
+    density = cv2.blur(counts, (size // 2, size // 2))
+    cy, cx = np.unravel_index(density.argmax(), density.shape)
+    y0 = int(np.clip(cy - size // 2, 0, max(H - size, 0)))
+    x0 = int(np.clip(cx - size // 2, 0, max(W - size, 0)))
+    return y0, min(y0 + size, H), x0, min(x0 + size, W)
