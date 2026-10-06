@@ -1,6 +1,6 @@
-"""Download the DSEC files used by notebooks/02_cmax_optical_flow_dsec.ipynb.
+"""Download the datasets the notebooks use: DSEC (notebook 02) and REBlur (notebook 03).
 
-Pulls only the left event camera (~300 MB) plus forward flow ground truth (~12 MB) for
+DSEC (default). Pulls only the left event camera (~300 MB) plus forward flow ground truth (~12 MB) for
 one sequence (default thun_00_a) and unpacks them into:
 
     data/dsec/<sequence>/
@@ -9,11 +9,18 @@ one sequence (default thun_00_a) and unpacks them into:
         flow/*.png
         <sequence>_optical_flow_forward_timestamps.txt
 
+REBlur (Sun et al., "Event-Based Fusion for Motion Deblurring with Cross-modal Attention",
+ECCV 2022). Pulls both releases (~700 MB and ~500 MB) and unpacks them into data/reblur/:
+
+    REBlur.zip            per-sequence h5 files with blurry/sharp images and SCER voxels
+    REBlur_rawevents.zip  the same sequences with the raw events
+
 Files that already exist are skipped, so it is safe to run again.
 
 Usage (from anywhere):
     python scripts/download_data.py
     python scripts/download_data.py --sequence thun_00_a --data-dir data
+    python scripts/download_data.py reblur
 """
 
 import argparse
@@ -23,6 +30,8 @@ import zipfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_URL = "https://download.ifi.uzh.ch/rpg/DSEC/train"
+REBLUR_URL = "https://data.vision.ee.ethz.ch/csakarid/shared/EFNet"
+REBLUR_FILES = ["REBlur.zip", "REBlur_rawevents.zip"]
 
 
 def download(url, dest):
@@ -31,7 +40,7 @@ def download(url, dest):
         return
     print(f"  download {os.path.basename(dest)}")
     tmp = dest + ".part"  # so an interrupted download is never mistaken for a finished one
-    subprocess.run(["curl", "-fL", "--progress-bar", "-o", tmp, url], check=True)
+    subprocess.run(["curl", "-fL", "-C", "-", "--progress-bar", "-o", tmp, url], check=True)  # -C -: resume a partial file
     os.replace(tmp, dest)
 
 
@@ -55,12 +64,31 @@ def download_dsec(sequence, data_dir):
     return out
 
 
+def download_reblur(data_dir):
+    out = os.path.join(data_dir, "reblur")
+    os.makedirs(out, exist_ok=True)
+    print(f"REBlur -> {os.path.relpath(out)}")
+    for f in REBLUR_FILES:
+        download(f"{REBLUR_URL}/{f}", os.path.join(out, f))
+        marker = os.path.join(out, f".unzipped_{f}")   # the archives' internal layout differs, so mark by file
+        if not os.path.exists(marker):
+            print(f"  unzip    {f}")
+            zipfile.ZipFile(os.path.join(out, f)).extractall(os.path.join(out, os.path.splitext(f)[0]))
+            open(marker, "w").close()
+    return out
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("dataset", nargs="?", default="dsec", choices=["dsec", "reblur"],
+                        help="which dataset to fetch (default: dsec)")
     parser.add_argument("--sequence", default="thun_00_a", help="DSEC training sequence name")
     parser.add_argument("--data-dir", default=os.path.join(REPO_ROOT, "data"),
                         help="data folder (default: <repo>/data)")
     args = parser.parse_args()
 
-    out = download_dsec(args.sequence, args.data_dir)
+    if args.dataset == "reblur":
+        out = download_reblur(args.data_dir)
+    else:
+        out = download_dsec(args.sequence, args.data_dir)
     print("done:", sorted(os.listdir(out)))

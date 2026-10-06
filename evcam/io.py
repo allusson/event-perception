@@ -1,6 +1,8 @@
-"""Loading event data: DV .aedat4 recordings (DAVIS346) and DSEC sequences."""
+"""Loading event data: DV .aedat4 recordings (DAVIS346), DSEC sequences and REBlur."""
 
+import functools
 import glob
+import os
 import warnings
 
 import aedat
@@ -230,3 +232,93 @@ def get_events(ev, rect_map, t0_abs, t1_abs):
     x, y, p = ev["events/x"][i0:i1][m], ev["events/y"][i0:i1][m], ev["events/p"][i0:i1][m]
     xy = rect_map[y, x]
     return xy[:, 0], xy[:, 1], (t[m] - t0) / (t1 - t0), p
+
+
+# ---------------------------------------------------------------------------
+# REBlur (Sun et al., EFNet, ECCV 2022)
+# ---------------------------------------------------------------------------
+#
+# Two releases of the same sequences, unpacked by `scripts/download_data.py reblur` into
+#   <root>/REBlur/REBlur/<split>/<sequence>.h5            images, sharp_images, voxels (SCER), masks
+#   <root>/REBlur_rawevents/REBlur_rawevents/<split>/<sequence>.h5   images, sharp_images, events
+# Images are grayscale stored as 3 identical channels. The raw release is 262 rows tall;
+# the SCER release dropped the last 2 rows (260 x 320), and everything returned here uses
+# that 260 x 320 frame. Exposure start/end are attributes of each image in the raw release.
+
+REBLUR_SHAPE = (260, 320)
+
+
+def _reblur_path(root, kind, split, sequence=""):
+    return os.path.join(root, kind, kind, split, sequence + ".h5" if sequence else "")
+
+
+def list_reblur(split="test", root="data/reblur"):
+    """All samples of a REBlur split, in a fixed order.
+
+    Parameters
+    ----------
+    split : "train" (486 samples) or "test" (903 samples); "addition" has no ground truth
+    root : folder `scripts/download_data.py reblur` unpacked into
+
+    Returns
+    -------
+    list of (sequence, index) tuples to pass to `load_reblur_sample`
+    """
+    files = sorted(glob.glob(os.path.join(_reblur_path(root, "REBlur", split), "*.h5")))
+    if not files:
+        raise FileNotFoundError(f"no REBlur {split} files under {root}; run `python scripts/download_data.py reblur`")
+    samples = []
+    for f in files:
+        with h5py.File(f, "r") as h:
+            samples += [(os.path.basename(f)[:-3], i) for i in range(len(h["images"]))]
+    return samples
+
+
+@functools.lru_cache(maxsize=2)
+def _reblur_events(path):
+    """All events of one raw REBlur sequence (cached: consecutive samples share a file)."""
+    with h5py.File(path, "r") as h:
+        ev = np.empty(len(h["events/ts"]), dtype=EVENT_DTYPE)
+        ev["x"], ev["y"] = h["events/xs"][:], h["events/ys"][:]
+        ev["t"] = np.round(h["events/ts"][:]).astype(np.int64)
+        ev["p"] = h["events/ps"][:]
+    return ev
+
+
+def load_reblur_sample(sequence, index, split="test", root="data/reblur"):
+    """Load one REBlur sample from both releases.
+
+    Parameters
+    ----------
+    sequence, index : one entry of `list_reblur(split)`
+    split, root : as in `list_reblur`
+
+    Returns
+    -------
+    dict with
+        "blurry" : (260, 320) float in [0, 1], the motion-blurred APS frame
+        "sharp"  : (260, 320) float in [0, 1], ground truth (None for the "addition" split)
+        "scer"   : (6, 260, 320) float32, SCER as stored (signed event counts, not normalized)
+        "mask"   : (260, 320) float in {0, 1}, 1 where any event fired during the exposure
+                   (stored as 0/255 and scaled the way EFNet's data loader does)
+        "events" : structured array (x, y, t, p) of the events inside the exposure window
+                   and inside the 260 x 320 frame, t in microseconds, p in {0, 1}
+        "t_begin", "t_end" : exposure window in microseconds, same clock as the events
+    """
+    name = f"image{index:09d}"
+    with h5py.File(_reblur_path(root, "REBlur", split, sequence), "r") as h:
+        blurry = h["images"][name][0] / 255.0
+        sharp = h["sharp_images"][name][0] / 255.0 if "sharp_images" in h else None
+        scer = h["voxels"][f"voxel{index:09d}"][:]
+        mask = h["masks"][f"mask{index:09d}"][0] / 255.0
+
+    raw_path = _reblur_path(root, "REBlur_rawevents", split, sequence)
+    with h5py.File(raw_path, "r") as h:
+        attrs = h["images"][name].attrs
+        t_begin, t_end = int(attrs["exposure_start"]), int(attrs["exposure_end"])
+    ev = _reblur_events(raw_path)
+    i0, i1 = np.searchsorted(ev["t"], [t_begin, t_end])
+    ev = ev[i0:i1]
+    ev = ev[(ev["y"] < REBLUR_SHAPE[0]) & (ev["x"] < REBLUR_SHAPE[1])]
+    return {"blurry": blurry, "sharp": sharp, "scer": scer, "mask": mask,
+            "events": ev, "t_begin": t_begin, "t_end": t_end}
