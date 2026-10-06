@@ -6,7 +6,7 @@ software, plus public datasets (N-MNIST, DSEC). Reusable code (loading recording
 representations, contrast maximization, metrics, plotting) lives in `evcam/`; the notebooks are
 the narrative on top of it and run both locally and on Google Colab.
 
-> **Placeholder:** `GITHUB_USER` appears in the links below and in the first code cell of each
+> **Placeholder:** `allusson` appears in the links below and in the first code cell of each
 > notebook. Replace it with the GitHub account that hosts this repo.
 
 ## Notebooks
@@ -70,9 +70,9 @@ root, so paths like `data/digit4.aedat4` resolve the same way locally and on Col
 Open a notebook directly from GitHub:
 
 ```
-https://colab.research.google.com/github/GITHUB_USER/event-perception/blob/main/notebooks/01_representations.ipynb
-https://colab.research.google.com/github/GITHUB_USER/event-perception/blob/main/notebooks/02_cmax_optical_flow_dsec.ipynb
-https://colab.research.google.com/github/GITHUB_USER/event-perception/blob/main/notebooks/03_deblurring_cmax_edi_efnet.ipynb
+https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/01_representations.ipynb
+https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/02_cmax_optical_flow_dsec.ipynb
+https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/03_deblurring_cmax_edi_efnet.ipynb
 ```
 
 The first code cell clones the repo into the Colab session, changes into it, and runs
