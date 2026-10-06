@@ -38,10 +38,10 @@ weights/                pretrained model weights (not in git)
 From the repo root:
 
 ```bash
-python3 -m venv .venv
+uv venv --python 3.12        # or: python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -e .
-pip install jupyterlab        # or use the VS Code notebook editor with the .venv kernel
+uv pip install -e .         # plain `pip` works too in a python -m venv environment
+uv pip install pip jupyterlab        # or use the VS Code notebook editor with the .venv kernel
 ```
 
 **Tonic install note.** `01_representations.ipynb` uses [Tonic](https://tonic.readthedocs.io/),
@@ -50,8 +50,8 @@ everything else here needs `numpy>=2`, so a normal install would downgrade numpy
 without its dependencies, then add the few it actually imports:
 
 ```bash
-pip install tonic --no-deps
-pip install expelliarmus pbr importRosbag
+uv pip install tonic --no-deps
+uv pip install expelliarmus pbr importRosbag
 ```
 
 pip will warn that tonic's requirements are not satisfied; that is expected. (The notebook runs
