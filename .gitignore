@@ -1,0 +1,15 @@
+# data and model weights stay out of git (see README: "Data")
+data/
+weights/
+*.aedat4
+*.h5
+*.zip
+
+# Python / Jupyter
+.venv/
+__pycache__/
+*.egg-info/
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store

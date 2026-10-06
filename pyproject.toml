@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "evcam"
+version = "0.1.0"
+description = "Small helper package for a directed study on event camera perception (DAVIS346, DSEC)."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=2",
+    "matplotlib",
+    "opencv-python",
+    "h5py",
+    "hdf5plugin",
+    "aedat",
+    "scipy",
+]
+# tonic is intentionally NOT listed here: its metadata pins numpy<2, so letting pip
+# resolve it would downgrade numpy. Install it separately with --no-deps (see README).
+
+[tool.setuptools]
+packages = ["evcam"]
