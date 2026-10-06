@@ -16,7 +16,13 @@ dependencies = [
     "hdf5plugin",
     "aedat",
     "scipy",
+    "scikit-image",
 ]
+
+[project.optional-dependencies]
+# EFNet inference (notebook 03). The vendored model in evcam/efnet_arch.py needs only these.
+deblur = ["torch", "einops"]
+dev = ["pytest"]
 # tonic is intentionally NOT listed here: its metadata pins numpy<2, so letting pip
 # resolve it would downgrade numpy. Install it separately with --no-deps (see README).
 

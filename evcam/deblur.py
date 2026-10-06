@@ -268,3 +268,75 @@ def edi_oracle_c(blurry, sharp, events, t_begin, t_end, t_ref=None, c_range=(0.0
     mse = lambda c: float(np.mean((np.clip(blurry / _divisor(E, c), 0, 1) - sharp) ** 2))
     c, cs, errs = _search_1d(mse, *c_range, n_coarse, tol)
     return c, {"c": cs, "psnr": -10 * np.log10(errs + 1e-12)}
+
+
+# ---------------------------------------------------------------------------
+# EFNet (Sun et al., ECCV 2022): pretrained inference
+# ---------------------------------------------------------------------------
+
+def _torch():
+    """Import torch lazily, so EDI and CMax work without the optional [deblur] extra.
+
+    PYTORCH_ENABLE_MPS_FALLBACK must be set before torch is first imported: it lets
+    operations that Apple's MPS backend lacks fall back to the CPU instead of raising.
+    """
+    import os
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+    import torch
+    return torch
+
+
+def pick_device():
+    """Best available torch device, in the order mps (Apple GPU), cuda, cpu."""
+    torch = _torch()
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
+
+def efnet_deblur(model, blurry, scer, mask=None, device=None):
+    """Deblur one frame with a pretrained EFNet, with the preprocessing of the EFNet repo.
+
+    Preprocessing (same as EFNet's `H5ImageDataset`): image in [0, 1]; SCER divided by its
+    own max abs value so it lies in [-1, 1]; mask in {0, 1}. H and W are reflection-padded
+    up to multiples of 4 (the network downsamples twice) and the output is cropped back.
+    EFNet has two stages and returns both results; the second one is the final image.
+
+    Parameters
+    ----------
+    model : EFNet from `evcam.efnet_arch.load_efnet`
+    blurry : (H, W) float image in [0, 1]. Replicated to 3 channels if the model takes 3
+        (the released models do), and the 3 output channels are averaged back to one.
+    scer : (6, H, W) SCER from `evcam.representations.scer` or stored in REBlur, raw counts
+    mask : (H, W) event mask in {0, 1} (1 where any event fired), or None to run the
+        model without its mask-gated connection
+    device : torch device (default: `pick_device()`)
+
+    Returns
+    -------
+    (H, W) float image in [0, 1]
+    """
+    torch = _torch()
+    F = torch.nn.functional
+    device = pick_device() if device is None else device
+    in_chn = model.conv_01.in_channels
+    H, W = blurry.shape
+
+    img = torch.from_numpy(np.ascontiguousarray(blurry, dtype=np.float32))[None, None].repeat(1, in_chn, 1, 1)
+    vmax = float(np.abs(scer).max())
+    vox = torch.from_numpy(np.ascontiguousarray(scer, dtype=np.float32) / (vmax if vmax > 0 else 1.0))[None]
+    inputs = [img, vox]
+    if mask is not None:
+        inputs.append(torch.from_numpy(np.ascontiguousarray(mask, dtype=np.float32))[None, None])
+
+    ph, pw = (-H) % 4, (-W) % 4
+    if ph or pw:
+        inputs = [F.pad(x, (0, pw, 0, ph), mode="reflect") for x in inputs]
+    inputs = [x.to(device) for x in inputs]
+
+    with torch.no_grad():
+        out = model(inputs[0], inputs[1], mask=inputs[2] if mask is not None else None)[1]
+    out = out[0, :, :H, :W].mean(dim=0)
+    return np.clip(out.cpu().numpy().astype(np.float64), 0, 1)

@@ -1,6 +1,7 @@
-"""Evaluation metrics: optical flow now, image quality (for deblurring) later."""
+"""Evaluation metrics: optical flow (EPE, N-pixel error) and image quality (PSNR, SSIM)."""
 
 import numpy as np
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 
 
 def endpoint_error(est, gt):
@@ -37,10 +38,21 @@ def n_pixel_error(est, gt, mask, n=3):
 
 
 def psnr(img, ref, data_range=1.0):
-    """Peak signal-to-noise ratio in dB between two (H, W) images. Stub for the deblurring work."""
-    raise NotImplementedError("psnr will be added with the deblurring notebooks")
+    """Peak signal-to-noise ratio in dB between two images of the same shape.
+
+    Parameters
+    ----------
+    img, ref : (H, W) float arrays (estimate and ground truth)
+    data_range : value range of the images (1.0 for images in [0, 1])
+    """
+    return float(peak_signal_noise_ratio(ref, img, data_range=data_range))
 
 
 def ssim(img, ref, data_range=1.0):
-    """Structural similarity between two (H, W) images. Stub for the deblurring work."""
-    raise NotImplementedError("ssim will be added with the deblurring notebooks")
+    """Structural similarity (Wang et al. 2004) between two (H, W) images, in [-1, 1].
+
+    Uses the standard settings of the original paper (Gaussian window, sigma 1.5), which
+    are what deblurring papers report.
+    """
+    return float(structural_similarity(ref, img, data_range=data_range, gaussian_weights=True,
+                                       sigma=1.5, use_sample_covariance=False))
