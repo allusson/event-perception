@@ -1,5 +1,6 @@
 """Frequency estimation from events: event-rate spectrum and per-pixel event intervals."""
 
+import cv2
 import numpy as np
 
 from evcam.io import EVENT_DTYPE
@@ -8,6 +9,32 @@ from evcam.io import EVENT_DTYPE
 def _in_roi(events, roi):
     x0, y0, x1, y1 = roi
     return (events["x"] >= x0) & (events["x"] < x1) & (events["y"] >= y0) & (events["y"] < y1)
+
+
+def busiest_roi(events, shape, size=40):
+    """Square ROI (x0, y0, x1, y1) of side `size` centred on the pixel with the most events.
+
+    The per-pixel event count is smoothed with a 5x5 box blur before the maximum is taken,
+    so a single hot pixel does not win. Near the border the square is shifted to stay
+    inside the frame.
+
+    Parameters
+    ----------
+    events : structured array (x, y, t, p)
+    shape : (H, W)
+    size : side of the square, pixels
+
+    Returns
+    -------
+    (x0, y0, x1, y1) in pixels, x1 and y1 exclusive
+    """
+    H, W = shape
+    counts = np.bincount(events["y"].astype(np.int64) * W + events["x"].astype(np.int64),
+                         minlength=H * W).reshape(H, W).astype(np.float32)
+    cy, cx = np.unravel_index(cv2.blur(counts, (5, 5), borderType=cv2.BORDER_CONSTANT).argmax(), (H, W))
+    x0 = int(np.clip(cx - size // 2, 0, max(W - size, 0)))
+    y0 = int(np.clip(cy - size // 2, 0, max(H - size, 0)))
+    return x0, y0, min(x0 + size, W), min(y0 + size, H)
 
 
 def event_rate_spectrum(events, t_start, t_end, bin_us=100, roi=None, f_min=5.0, polarity=None,
@@ -108,7 +135,8 @@ def pixel_frequency_map(events, shape, polarity=1, min_events=10, refractory_us=
 
 
 def synthetic_flicker(freq_hz, duration_s=1.0, shape=(260, 346), region=(150, 110, 190, 150),
-                      duty=0.5, jitter_us=100.0, burst=1, noise_rate_hz=20000.0, seed=0):
+                      duty=0.5, jitter_us=100.0, burst=1, burst_spacing_us=50.0, noise_rate_hz=20000.0,
+                      seed=0):
     """Synthetic events from a pixel region flickering at a known frequency.
 
     Every pixel of the region fires `burst` ON events at each rising edge (once per period)
@@ -123,7 +151,8 @@ def synthetic_flicker(freq_hz, duration_s=1.0, shape=(260, 346), region=(150, 11
     region : (x0, y0, x1, y1) flickering pixels, x1 and y1 exclusive
     duty : fraction of the period the region is bright
     jitter_us : standard deviation of the event time jitter, microseconds
-    burst : events per edge, 50 microseconds apart
+    burst : events per edge
+    burst_spacing_us : time between consecutive events of a burst, microseconds
     noise_rate_hz : noise events per second over the whole frame
     seed : random seed
 
@@ -142,7 +171,7 @@ def synthetic_flicker(freq_hz, duration_s=1.0, shape=(260, 346), region=(150, 11
     xs_, ys_, ts_, ps_ = [], [], [], []
     for pol, offset in ((1, 0.0), (0, duty * period)):
         for b in range(burst):
-            t = cycles[None, :] + offset + 50.0 * b + rng.normal(0, jitter_us, (xs.size, len(cycles)))
+            t = cycles[None, :] + offset + burst_spacing_us * b + rng.normal(0, jitter_us, (xs.size, len(cycles)))
             xs_.append(np.repeat(xs.ravel(), len(cycles)))
             ys_.append(np.repeat(ys.ravel(), len(cycles)))
             ts_.append(t.ravel())
