@@ -16,6 +16,7 @@ the narrative on top of it and run both locally and on Google Colab.
 | [`01_representations.ipynb`](notebooks/01_representations.ipynb) | Event representations (raw events, event frames, time surfaces, voxel grids, stored-frame overlay) on N-MNIST or our own DAVIS346 `.aedat4` recordings. |
 | [`02_cmax_optical_flow_dsec.ipynb`](notebooks/02_cmax_optical_flow_dsec.ipynb) | Contrast maximization optical flow on DSEC (`thun_00_a`), evaluated against DSEC-Flow ground truth. |
 | [`03_deblurring_cmax_edi_efnet.ipynb`](notebooks/03_deblurring_cmax_edi_efnet.ipynb) | Motion deblurring with events on REBlur: CMax + Richardson-Lucy, EDI, and pretrained EFNet, compared by PSNR / SSIM. |
+| [`04_frequency_estimation.ipynb`](notebooks/04_frequency_estimation.ipynb) | Frequency estimation from events (event-rate spectrum, per-pixel interval map) on synthetic flicker and on a DAVIS346 propeller recording. |
 
 ## Repo layout
 
@@ -27,11 +28,12 @@ evcam/                  installable package
   deblur.py             EDI (edi_deblur, edi_select_c), cmax_deblur (CMax + Richardson-Lucy), efnet_deblur
   deblur_eval.py        REBlur test-split evaluation loop with caching
   efnet_arch.py         EFNet model, vendored from github.com/AHupuJR/EFNet (Apache 2.0)
+  frequency.py          event_rate_spectrum, pixel_frequency_map, synthetic_flicker
   metrics.py            EPE / 3PE, PSNR / SSIM
   viz.py                flow_to_rgb, show_images, busiest_crop
 notebooks/              the notebooks listed above
 scripts/download_data.py   DSEC (default) and REBlur (`reblur`)
-tests/                  pytest tests for EDI, SCER and the deconvolution baseline
+tests/                  pytest tests for EDI, SCER, the deconvolution baseline and frequency estimation
 docs/                   DV setup tutorial and paper notes (placeholders)
 data/                   recordings and datasets (not in git)
 weights/                pretrained model weights (not in git)
@@ -73,6 +75,7 @@ Open a notebook directly from GitHub:
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/01_representations.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/02_cmax_optical_flow_dsec.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/03_deblurring_cmax_edi_efnet.ipynb
+https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/04_frequency_estimation.ipynb
 ```
 
 The first code cell clones the repo into the Colab session, changes into it, and runs
@@ -104,7 +107,8 @@ tests/                  pytest tests for EDI, SCER and the deconvolution baselin
   the [EFNet README](https://github.com/AHupuJR/EFNet). `weights/` is gitignored.
 - **N-MNIST**, optional in notebook 01: downloaded automatically by Tonic into `data/`.
 - **Our own DAVIS346 recordings** (`.aedat4`), used by notebook 01: copy them into `data/`, e.g.
-  `data/digit4.aedat4`.
+  `data/digit4.aedat4`. Notebook 04 expects `data/propeller.aedat4` and skips its real-data
+  section when the file is missing.
 
 **`digit4.aedat4` has no camera frames.** Its frame stream is DV Accumulator output (images
 rendered from the events), because the camera's `frames` output was not wired to the file output
