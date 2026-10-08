@@ -17,12 +17,13 @@ the narrative on top of it and run both locally and on Google Colab.
 | [`02_cmax_optical_flow_dsec.ipynb`](notebooks/02_cmax_optical_flow_dsec.ipynb) | Contrast maximization optical flow on DSEC (`thun_00_a`), evaluated against DSEC-Flow ground truth. |
 | [`03_deblurring_cmax_edi_efnet.ipynb`](notebooks/03_deblurring_cmax_edi_efnet.ipynb) | Motion deblurring with events on REBlur: CMax + Richardson-Lucy, EDI, and pretrained EFNet, compared by PSNR / SSIM. |
 | [`04_frequency_estimation.ipynb`](notebooks/04_frequency_estimation.ipynb) | Frequency estimation from events (event-rate spectrum, per-pixel interval map) on synthetic flicker and on a DAVIS346 propeller recording. |
+| [`05_star_cmax.ipynb`](notebooks/05_star_cmax.ipynb) | One global velocity by contrast maximization on a rotating star field (Chin et al., CVPRW 2019; Stellarium on a screen), compared with the ground-truth rotation. |
 
 ## Repo layout
 
 ```
 evcam/                  installable package
-  io.py                 load_aedat4, crop_time, frames_look_accumulated, DSEC and REBlur loading
+  io.py                 load_aedat4, crop_time, frames_look_accumulated, DSEC, REBlur and star dataset loading
   representations.py    time surface, signed event image, SCER (EFNet's event representation)
   cmax.py               iwe, contrast, cmax_patch, patchwise_flow
   deblur.py             EDI (edi_deblur, edi_select_c), cmax_deblur (CMax + Richardson-Lucy), efnet_deblur
@@ -32,7 +33,7 @@ evcam/                  installable package
   metrics.py            EPE / 3PE, PSNR / SSIM
   viz.py                flow_to_rgb, show_images, busiest_crop
 notebooks/              the notebooks listed above
-scripts/download_data.py   DSEC (default) and REBlur (`reblur`)
+scripts/download_data.py   DSEC (default), REBlur (`reblur`) and star tracking (`stars`)
 tests/                  pytest tests for EDI, SCER, the deconvolution baseline and frequency estimation
 docs/                   DV setup tutorial and paper notes (placeholders)
 data/                   recordings and datasets (not in git)
@@ -76,6 +77,7 @@ https://colab.research.google.com/github/allusson/event-perception/blob/main/not
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/02_cmax_optical_flow_dsec.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/03_deblurring_cmax_edi_efnet.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/04_frequency_estimation.ipynb
+https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/05_star_cmax.ipynb
 ```
 
 The first code cell clones the repo into the Colab session, changes into it, and runs
@@ -105,6 +107,12 @@ tests/                  pytest tests for EDI, SCER and the deconvolution baselin
   Notebook 03 also needs the pretrained checkpoint at `weights/EFNet-REBlur.pth`. It is hosted on
   Google Drive and has to be downloaded by hand: use the "pretrained model" link under REBlur in
   the [EFNet README](https://github.com/AHupuJR/EFNet). `weights/` is gitignored.
+- **Star tracking** (Chin et al., CVPRW 2019), used by notebook 05: the original archive (about
+  430 MB) from its Internet Archive copy, since the project page is gone; one sequence is unpacked
+  into `data/stars/`.
+  ```bash
+  python scripts/download_data.py stars
+  ```
 - **N-MNIST**, optional in notebook 01: downloaded automatically by Tonic into `data/`.
 - **Our own DAVIS346 recordings** (`.aedat4`), used by notebook 01: copy them into `data/`, e.g.
   `data/digit4.aedat4`. Notebook 04 expects `data/propeller.aedat4` and skips its real-data

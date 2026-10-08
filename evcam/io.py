@@ -1,4 +1,5 @@
-"""Loading event data: DV .aedat4 recordings (DAVIS346), DSEC sequences and REBlur."""
+"""Loading event data: DV .aedat4 recordings (DAVIS346), DSEC sequences, REBlur and the
+Adelaide star tracking dataset."""
 
 import functools
 import glob
@@ -322,3 +323,81 @@ def load_reblur_sample(sequence, index, split="test", root="data/reblur"):
     ev = ev[(ev["y"] < REBLUR_SHAPE[0]) & (ev["x"] < REBLUR_SHAPE[1])]
     return {"blurry": blurry, "sharp": sharp, "scer": scer, "mask": mask,
             "events": ev, "t_begin": t_begin, "t_end": t_end}
+
+
+# ---------------------------------------------------------------------------
+# Star tracking (Chin et al., "Star Tracking using an Event Camera", CVPRW 2019)
+# ---------------------------------------------------------------------------
+#
+# `scripts/download_data.py stars` unpacks into <root>/:
+#   Sequence<k>.csv         events, one per line: time (ms), row, col, polarity (0/1)
+#   Sequence<k>_attitudes   2 lines of axis (3) + angle (rad): the initial attitude, and the
+#                           rotation per microsecond (the same 4 deg/s in every sequence)
+#   CameraMatrix            3x3, pixel -> unit direction in the camera frame (up to scale)
+# The camera is a DAVIS 240C (240 x 180) filming a screen that shows Stellarium. Event
+# coordinates were undistorted by the authors, so they are not integers and some fall
+# outside the sensor.
+#
+# Two conventions here are not in the dataset's ReadMe and were fixed by checking them
+# against the star motion seen in the events: the camera matrix takes (x, y, 1) =
+# (col, row, 1), and a star with direction d in the camera frame moves with omega x d.
+
+STAR_SHAPE = (180, 240)
+
+
+def load_star_sequence(sequence=3, root="data/stars"):
+    """Load one sequence of the star tracking dataset.
+
+    Parameters
+    ----------
+    sequence : sequence number, 1 to 11
+    root : folder `scripts/download_data.py stars` unpacked into
+
+    Returns
+    -------
+    events : structured array (x, y, t, p), t in microseconds starting at 0, p in {0, 1}.
+        Coordinates are rounded to the nearest pixel and events outside the 180 x 240
+        frame are dropped.
+    gt : dict with
+        "camera_matrix" : (3, 3), maps (x, y, 1) to the star direction in the camera frame
+        "omega"         : (3,) angular velocity in the camera frame, rad/s (constant)
+        "attitude0"     : (4,) axis and angle (rad) of the attitude at the first event
+    """
+    path = os.path.join(root, f"Sequence{sequence}.csv")
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"{path} not found; run `python scripts/download_data.py stars`")
+    raw = np.loadtxt(path, delimiter=",")
+    x, y = np.round(raw[:, 2]).astype(np.int64), np.round(raw[:, 1]).astype(np.int64)
+    m = (x >= 0) & (x < STAR_SHAPE[1]) & (y >= 0) & (y < STAR_SHAPE[0])
+    events = np.empty(m.sum(), dtype=EVENT_DTYPE)
+    events["x"], events["y"] = x[m], y[m]
+    events["t"] = np.round(raw[m, 0] * 1000)
+    events["t"] -= events["t"][0]
+    events["p"] = raw[m, 3]
+
+    att = np.loadtxt(os.path.join(root, f"Sequence{sequence}_attitudes"), delimiter=",")
+    gt = {"camera_matrix": np.loadtxt(os.path.join(root, "CameraMatrix"), delimiter=","),
+          "omega": att[1, :3] / np.linalg.norm(att[1, :3]) * att[1, 3] * 1e6,
+          "attitude0": att[0]}
+    return events, gt
+
+
+def rotation_flow(camera_matrix, omega, x, y):
+    """Image velocity of points at infinity (stars) under a camera rotation.
+
+    With d = M (x, y, 1) the direction of a pixel, the direction moves with omega x d and
+    the pixel with the projection of that back through M^-1.
+
+    Parameters
+    ----------
+    camera_matrix : (3, 3) M, pixel (x, y, 1) -> direction in the camera frame
+    omega : (3,) angular velocity in the camera frame, rad/s
+    x, y : (N,) pixel coordinates
+
+    Returns
+    -------
+    (N, 2) float array, velocity (vx, vy) in pixels per second
+    """
+    u = np.stack([x, y, np.ones_like(x, dtype=float)], axis=-1)
+    q = np.cross(omega, u @ camera_matrix.T) @ np.linalg.inv(camera_matrix).T
+    return q[:, :2] - u[:, :2] * q[:, 2:]
