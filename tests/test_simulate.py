@@ -48,3 +48,20 @@ def test_refractory_drops_close_events():
     clip = ramp_clip(l0, l0 + 3.5 * C, n_frames=2, dt_us=700)    # crossings 200 us apart
     ev = simulate_events(clip, c=C, eps=EPS, refractory_us=300).events
     np.testing.assert_allclose(ev["t"], [200, 600], atol=1)
+
+
+def test_blur_triplet_edi_true_c_improves_psnr():
+    from evcam.deblur import edi_deblur
+    from evcam.metrics import psnr
+    from evcam.simulate import make_blur_triplet
+
+    clip = simulate_events(synthetic_video(duration_s=0.04, fps=1000), c=C)
+    tr = make_blur_triplet(clip, center_idx=20, n_avg=16)
+    (t_a, t_b), = tr.exposure
+    assert (t_a, t_b) == (12_000, 28_000) and tr.frame_t[0] == 20_000
+    assert tr.events["t"].min() >= t_a and tr.events["t"].max() < t_b
+    blurry, sharp = tr.frames[0], tr.meta["sharp"]
+    out = edi_deblur(blurry, tr.events, t_a, t_b, C, t_ref=tr.frame_t[0])
+    gain = psnr(out, sharp) - psnr(blurry, sharp)
+    print(f"EDI with the true c: {psnr(blurry, sharp):.2f} -> {psnr(out, sharp):.2f} dB (+{gain:.2f})")
+    assert gain > 2.0

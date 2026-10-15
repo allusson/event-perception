@@ -125,3 +125,49 @@ def simulate_events_v2e(clip, **kwargs):
     shot noise rates and refractory period are the kwargs worth exposing.
     """
     raise NotImplementedError("v2e is not installed; see the docstring of simulate_events_v2e.")
+
+
+def make_blur_triplet(clip, center_idx, n_avg):
+    """Blurry frame, sharp ground truth and the events of the exposure, from a high-fps clip.
+
+    The blurry frame is the time average of the clip over the exposure [t_a, t_b], with
+    t_a = frame_t[center_idx - n_avg / 2] and t_b = frame_t[center_idx + n_avg / 2]: the
+    trapezoid rule over these n_avg + 1 frames (end frames weighted 1/2), which is the
+    exact average of the linearly interpolated intensity, and so spans exactly n_avg frame
+    periods centred on the sharp frame. The sharp ground truth is the centre frame. The
+    events are the clip's (simulated) events with t_a <= t < t_b.
+
+    Even with the true c, EDI is not exact: changes smaller than c since a pixel's last
+    event are never reported (quantization), and EDI also assumes the threshold is the same
+    everywhere and that every change produced its events. This residual is part of what
+    notebook 06 measures.
+
+    Parameters
+    ----------
+    clip : Clip with frames, frame_t and events (e.g. from `simulate_events`)
+    center_idx : index of the sharp frame
+    n_avg : even number of frame periods in the exposure
+
+    Returns
+    -------
+    Clip with frames = the blurry frame (1, H, W), frame_t = [frame_t[center_idx]],
+    exposure = [[t_a, t_b]], events in the exposure, and meta "sharp", "c_true", "n_avg",
+    "center_idx"
+    """
+    if n_avg % 2:
+        raise ValueError("n_avg must be even so the exposure is centred on a frame")
+    a, b = center_idx - n_avg // 2, center_idx + n_avg // 2
+    if a < 0 or b >= clip.n_frames:
+        raise ValueError(f"frames {a}..{b} are outside the clip (0..{clip.n_frames - 1})")
+    w = np.ones(n_avg + 1); w[[0, -1]] = 0.5
+    blurry = np.tensordot(w / w.sum(), clip.frames[a:b + 1].astype(np.float64), axes=1).astype(np.float32)
+    t_a, t_b = int(clip.frame_t[a]), int(clip.frame_t[b])
+    ev = None
+    if clip.events is not None:
+        i0, i1 = np.searchsorted(clip.events["t"], [t_a, t_b])
+        ev = clip.events[i0:i1]
+    meta = {k: v for k, v in clip.meta.items() if k not in ("c_on_map", "c_off_map")}
+    meta.update(sharp=clip.frames[center_idx].copy(), c_true=clip.meta.get("c_true"), n_avg=n_avg,
+                center_idx=center_idx)
+    return dataclasses.replace(clip, frames=blurry[None], frame_t=clip.frame_t[[center_idx]].copy(),
+                               exposure=np.array([[t_a, t_b]], np.int64), events=ev, meta=meta)
