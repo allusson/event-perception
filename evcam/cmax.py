@@ -6,6 +6,7 @@ flow `d` is a displacement in pixels per window.
 
 import cv2
 import numpy as np
+from scipy.optimize import minimize
 
 
 def iwe(x, y, tn, d, shape, origin=(0, 0), sigma=1.0):
@@ -29,9 +30,26 @@ def iwe(x, y, tn, d, shape, origin=(0, 0), sigma=1.0):
     -------
     (h, w) float array
     """
+    return iwe_from_coords(x - d[0] * tn, y - d[1] * tn, shape, origin, sigma)
+
+
+def iwe_from_coords(xw, yw, shape, origin=(0, 0), sigma=1.0):
+    """Image of Warped Events from already-warped coordinates, with the bilinear voting of `iwe`.
+
+    Parameters
+    ----------
+    xw, yw : (N,) float warped pixel coordinates
+    shape : (h, w) of the output canvas
+    origin : (x, y) of the canvas' top-left corner in image coordinates
+    sigma : Gaussian blur in pixels applied to the result (0 = no blur)
+
+    Returns
+    -------
+    (h, w) float array
+    """
     h, w = shape
-    xw = x - d[0] * tn - origin[0]
-    yw = y - d[1] * tn - origin[1]
+    xw = xw - origin[0]
+    yw = yw - origin[1]
     x0, y0 = np.floor(xw).astype(int), np.floor(yw).astype(int)
     ax, ay = xw - x0, yw - y0
     img = np.zeros(h * w)
@@ -106,3 +124,70 @@ def patchwise_flow(x, y, tn, shape, patch_size=64, min_events=500, **cmax_kwargs
             if n > min_events:
                 est[py:py + patch_size, px:px + patch_size] = d
     return est
+
+
+def rotation_warp(x, y, t, omega, M, t_ref):
+    """Warp events to t_ref under a constant camera rotation (points at infinity, e.g. stars).
+
+    The direction d = M (x, y, 1) of each event is rotated by exp(-[omega]_x (t - t_ref))
+    (Rodrigues formula, exact) and projected back through M^-1, the convention of
+    `evcam.io.rotation_flow`.
+
+    Parameters
+    ----------
+    x, y : (N,) pixel coordinates
+    t : (N,) event times, seconds
+    omega : (3,) angular velocity, rad/s, in the frame of the directions M (x, y, 1)
+    M : (3, 3) camera matrix, pixel (x, y, 1) -> direction
+    t_ref : reference time, seconds
+
+    Returns
+    -------
+    xw, yw : (N,) float warped pixel coordinates
+    """
+    omega = np.asarray(omega, dtype=float)
+    d = np.stack([x, y, np.ones_like(x, dtype=float)], axis=-1) @ M.T
+    speed = np.linalg.norm(omega)
+    if speed > 0:
+        n = omega / speed
+        theta = (-speed * (np.asarray(t, dtype=float) - t_ref))[:, None]
+        d = (d * np.cos(theta) + np.cross(n, d) * np.sin(theta)
+             + n * (d @ n)[:, None] * (1 - np.cos(theta)))
+    q = d @ np.linalg.inv(M).T
+    return q[:, 0] / q[:, 2], q[:, 1] / q[:, 2]
+
+
+def cmax_rotation(x, y, t, M, t_ref, canvas, origin, omega0=(0, 0, 0), step=0.05, simplex=0.01):
+    """Constant angular velocity maximizing the IWE variance under `rotation_warp`.
+
+    Nelder-Mead is started from omega0 and from omega0 +- `step` on each axis (7 starts);
+    the best result is returned.
+
+    Parameters
+    ----------
+    x, y : (N,) pixel coordinates
+    t : (N,) event times, seconds
+    M : (3, 3) camera matrix, pixel (x, y, 1) -> direction
+    t_ref : reference time, seconds
+    canvas : (h, w) of the IWE canvas
+    origin : (x, y) of the canvas' top-left corner in image coordinates
+    omega0 : (3,) first start, rad/s
+    step : offset of the other starts, rad/s
+    simplex : size of the initial Nelder-Mead simplex around each start, rad/s
+
+    Returns
+    -------
+    omega : (3,) float array, rad/s
+    contrast : IWE variance at omega
+    """
+    f = lambda w: -contrast(iwe_from_coords(*rotation_warp(x, y, t, w, M, t_ref), canvas, origin))
+    omega0 = np.asarray(omega0, dtype=float)
+    starts = [omega0] + [omega0 + s * e for e in np.eye(3) for s in (step, -step)]
+    best = None
+    for w0 in starts:
+        res = minimize(f, w0, method="Nelder-Mead",
+                       options={"initial_simplex": np.vstack([w0, w0 + simplex * np.eye(3)]),
+                                "xatol": 1e-5, "fatol": 1e-4})
+        if best is None or res.fun < best.fun:
+            best = res
+    return best.x, -best.fun
