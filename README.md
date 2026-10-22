@@ -18,7 +18,8 @@ the narrative on top of it and run both locally and on Google Colab.
 | [`03_deblurring_cmax_edi_efnet.ipynb`](notebooks/03_deblurring_cmax_edi_efnet.ipynb) | Motion deblurring with events on REBlur: CMax + Richardson-Lucy, EDI, and pretrained EFNet, compared by PSNR / SSIM. |
 | [`04_frequency_estimation.ipynb`](notebooks/04_frequency_estimation.ipynb) | Frequency estimation from events (event-rate spectrum, per-pixel interval map) on synthetic flicker and on a DAVIS346 propeller recording. |
 | [`05_star_cmax.ipynb`](notebooks/05_star_cmax.ipynb) | One global velocity by contrast maximization on a rotating star field (Chin et al., CVPRW 2019; Stellarium on a screen), compared with the ground-truth rotation. |
-| [`06_simulation_and_reconstruction.ipynb`](notebooks/06_simulation_and_reconstruction.ipynb) | Common `Clip` bundle for several sources (synthetic video by default, phone slow-motion video, DAVIS346, REBlur), ESIM-style event simulation, deblurring against ground truth with a known contrast threshold (EDI, CMax + RL, EFNet), and reconstruction from events only (direct integration, high-pass filter). Runs without external data. |
+| [`06_event_generation.ipynb`](notebooks/06_event_generation.ipynb) | How brightness change becomes events: ESIM-style simulation from a 240 fps iPhone slow-motion clip of a fidget spinner, compared with the DAVIS346 recording of the same spinner (hand-picked motion start, side-by-side event images, event rate per pixel). |
+| [`07_reconstruction.ipynb`](notebooks/07_reconstruction.ipynb) | Reconstruction from events only (direct integration, high-pass filter, E2VID stub) on simulated events and one REBlur sample. Unpolished, moved from the old notebook 06. |
 
 ## Repo layout
 
@@ -43,6 +44,15 @@ docs/                   DV setup tutorial and paper notes (placeholders)
 data/                   recordings and datasets (not in git)
 weights/                pretrained model weights (not in git)
 ```
+
+## Adding a source or method
+
+- **Source:** write a function in `evcam/sources.py` that returns a `Clip` (frames in linear
+  intensity with `frame_t`, and/or events in `EVENT_DTYPE`) and add it to `SOURCES`.
+- **Deblurring method:** write a function that takes a one-frame `Clip` (blurry frame,
+  `exposure`, `events`) and returns the deblurred frame.
+- **Reconstruction method:** write a function `(events, shape, ..., t_query) -> (Q, H, W)` log
+  intensity in `evcam/reconstruct.py`.
 
 ## Local setup (macOS)
 
@@ -82,7 +92,8 @@ https://colab.research.google.com/github/allusson/event-perception/blob/main/not
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/03_deblurring_cmax_edi_efnet.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/04_frequency_estimation.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/05_star_cmax.ipynb
-https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/06_simulation_and_reconstruction.ipynb
+https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/06_event_generation.ipynb
+https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/07_reconstruction.ipynb
 ```
 
 The first code cell clones the repo into the Colab session, changes into it, and runs
@@ -112,9 +123,12 @@ tests/                  pytest tests for EDI, SCER and the deconvolution baselin
   Notebook 03 also needs the pretrained checkpoint at `weights/EFNet-REBlur.pth`. It is hosted on
   Google Drive and has to be downloaded by hand: use the "pretrained model" link under REBlur in
   the [EFNet README](https://github.com/AHupuJR/EFNet). `weights/` is gitignored.
-- **Own recordings for notebook 06** (optional): phone videos go in `data/video_data/`, DAVIS346
-  `.aedat4` recordings in `data/davis_data/` (both created by the notebook). If OpenCV cannot
-  decode an iPhone HEVC file, convert it first with `ffmpeg -i input.MOV -c:v libx264 -crf 18 output.mp4`.
+- **Fidget spinner recording for notebook 06**: one session filmed at the same time by an iPhone
+  (240 fps slow motion) and the DAVIS346, side by side. The phone clip goes in
+  `data/video_data/spinner.mov` (or `.mp4`, then set `VIDEO_PATH`), the DAVIS clip in
+  `data/davis_data/spinner.aedat4`. Notebook 03's own-data cell also reads the DAVIS clip. If
+  OpenCV cannot decode an iPhone HEVC file, convert it first with
+  `ffmpeg -i input.MOV -c:v libx264 -crf 18 output.mp4`.
 - **Star tracking** (Chin et al., CVPRW 2019), used by notebook 05: the original archive (about
   430 MB) from its Internet Archive copy, since the project page is gone; one sequence is unpacked
   into `data/stars/`.
