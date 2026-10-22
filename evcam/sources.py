@@ -1,4 +1,4 @@
-"""Data sources for notebook 06: every loader returns the same `Clip` bundle.
+"""Data sources for notebooks 06 and 07: every loader returns the same `Clip` bundle.
 
 A `Clip` holds whatever a source provides: frames (grayscale, linear intensity), their
 timestamps and exposures, events, or several of these. Methods take a `Clip` and use the

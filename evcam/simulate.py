@@ -139,8 +139,7 @@ def make_blur_triplet(clip, center_idx, n_avg):
 
     Even with the true c, EDI is not exact: changes smaller than c since a pixel's last
     event are never reported (quantization), and EDI also assumes the threshold is the same
-    everywhere and that every change produced its events. This residual is part of what
-    notebook 06 measures.
+    everywhere and that every change produced its events.
 
     Parameters
     ----------
