@@ -72,3 +72,34 @@ def busiest_crop(events, shape, size=96):
     y0 = int(np.clip(cy - size // 2, 0, max(H - size, 0)))
     x0 = int(np.clip(cx - size // 2, 0, max(W - size, 0)))
     return y0, min(y0 + size, H), x0, min(x0 + size, W)
+
+
+EVENT_CMAP = "bwr"
+EVENT_LABEL = "ON − OFF (red = ON, blue = OFF)"
+
+
+def show_events(ax, img, vmax=None, colorbar=True, label=EVENT_LABEL, title=None, fontsize=None):
+    """Signed event image in the repo's convention: bwr, red = ON (brighter), blue = OFF (darker).
+
+    Parameters
+    ----------
+    ax : matplotlib Axes
+    img : (H, W) signed image, e.g. ON count - OFF count from `event_image`
+    vmax : half-range of the symmetric color scale; None: 99.5th percentile of |img|, at least 1
+    colorbar : add a colorbar labeled `label` (with False, state the convention in a title)
+    label : colorbar label
+    title, fontsize : optional axes title
+
+    Returns
+    -------
+    the AxesImage
+    """
+    import matplotlib.pyplot as plt
+    if vmax is None:
+        vmax = max(1.0, float(np.percentile(np.abs(img), 99.5)))
+    im = ax.imshow(img, cmap=EVENT_CMAP, vmin=-vmax, vmax=vmax)
+    if colorbar:
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04).set_label(label)
+    if title:
+        ax.set_title(title, fontsize=fontsize)
+    return im
