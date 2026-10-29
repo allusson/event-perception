@@ -21,6 +21,7 @@ the narrative on top of it and run both locally and on Google Colab.
 | [`06_event_generation.ipynb`](notebooks/06_event_generation.ipynb) | How brightness change becomes events: ESIM-style simulation from a 240 fps iPhone slow-motion clip of a fidget spinner, compared with the DAVIS346 recording of the same spinner (hand-picked motion start, side-by-side event images, event rate per pixel). |
 | [`07_reconstruction.ipynb`](notebooks/07_reconstruction.ipynb) | Reconstruction from events only (direct integration, high-pass filter, E2VID stub) on simulated events and one REBlur sample. Unpolished, moved from the old notebook 06. |
 | [`08_spinner_rotation.ipynb`](notebooks/08_spinner_rotation.ipynb) | Rotation speed of a fidget spinner from DAVIS346 events by two methods: rotation CMax and the event-rate spectrum (harmonic product spectrum), compared over the spin-down. |
+| [`09_event_synthesis_diffusion.ipynb`](notebooks/09_event_synthesis_diffusion.ipynb) | Event images generated with the pretrained ControlEvents diffusion models (Hu et al., WACV 2026): from text (compared with plain Stable Diffusion), from a 2D skeleton (dataset samples and one's own photo through OpenPose) and from an SMPL normal map. Demo of released weights, no training. Downloads about 16 GB of weights on first run; use a Colab GPU runtime. |
 
 Signed event images use `bwr` with ON − OFF: red = ON (brighter), blue = OFF (darker).
 
@@ -98,6 +99,7 @@ https://colab.research.google.com/github/allusson/event-perception/blob/main/not
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/06_event_generation.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/07_reconstruction.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/08_spinner_rotation.ipynb
+https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/09_event_synthesis_diffusion.ipynb
 ```
 
 The first code cell clones the repo into the Colab session, changes into it, and runs
@@ -139,6 +141,15 @@ tests/                  pytest tests for EDI, SCER and the deconvolution baselin
   ```bash
   python scripts/download_data.py stars
   ```
+- **ControlEvents**, used by notebook 09: the authors' skeleton and normal-map data (about 0.7 GB
+  of zips from the Hugging Face dataset `YixuanHu/ControlEvents_data`), unpacked by the notebook into
+  `data/controlevents/`. Each condition (13 joints as text, or a normal map) is paired with an event
+  image the authors generated, not a recording. The weights (about 16 GB: the ControlEvents UNets and
+  ControlNets plus VAE, text encoder and UNet from Stable Diffusion 1.4 / 1.5) go to
+  `weights/controlevents/`. ControlEvents weights and data are MIT; Stable Diffusion weights are
+  CreativeML OpenRAIL-M. Locally the notebook also needs
+  `pip install diffusers transformers accelerate safetensors controlnet_aux huggingface_hub`.
+  For the own-pose cell, put a photo at `data/controlevents/own_pose.jpg`.
 - **N-MNIST**, optional in notebook 01: downloaded automatically by Tonic into `data/`.
 - **Our own DAVIS346 recordings** (`.aedat4`), used by notebook 01: copy them into `data/`, e.g.
   `data/digit4.aedat4`. Notebook 04 expects `data/propeller.aedat4` and skips its real-data
