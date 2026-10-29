@@ -47,3 +47,20 @@ def test_cmax_rotation_recovers_omega():
     cos = omega @ OMEGA / (np.linalg.norm(omega) * np.linalg.norm(OMEGA))
     assert np.degrees(np.arccos(np.clip(cos, -1, 1))) < 3.0
     assert c > 0
+
+
+def test_cmax_rotation_2d_recovers_spinner_omega():
+    from evcam.cmax import cmax_rotation_2d
+
+    rng = np.random.default_rng(0)
+    center, n_arms, T, n = (170.0, 130.0), 3, 0.008, 20000
+    omega_true = -2 * np.pi * 12.0                        # 12 rev/s, counter-clockwise on screen
+    t = rng.uniform(0, T, n)
+    r = rng.uniform(10, 60, n)
+    ang = 0.3 + omega_true * t + 2 * np.pi * rng.integers(0, n_arms, n) / n_arms + rng.normal(0, 0.02, n)
+    x, y = center[0] + r * np.cos(ang), center[1] + r * np.sin(ang)
+
+    omegas = 2 * np.pi * np.arange(-60, 60.01, 0.5)
+    omega, contrasts = cmax_rotation_2d(x, y, t, center, 0.0, omegas)
+    assert contrasts.shape == omegas.shape
+    assert abs(omega - omega_true) / abs(omega_true) < 0.02

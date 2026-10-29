@@ -191,3 +191,68 @@ def cmax_rotation(x, y, t, M, t_ref, canvas, origin, omega0=(0, 0, 0), step=0.05
         if best is None or res.fun < best.fun:
             best = res
     return best.x, -best.fun
+
+
+def rotation_warp_2d(x, y, t, omega, center, t_ref):
+    """Warp events to t_ref under a constant in-plane rotation about `center`.
+
+    x' = c + R(-omega (t - t_ref)) (x - c), with R(a) = [[cos a, -sin a], [sin a, cos a]] in
+    image coordinates (y down), so omega > 0 is clockwise on screen.
+
+    Parameters
+    ----------
+    x, y : (N,) pixel coordinates
+    t : (N,) event times, seconds
+    omega : angular velocity, rad/s
+    center : (cx, cy) rotation center, pixels
+    t_ref : reference time, seconds
+
+    Returns
+    -------
+    xw, yw : (N,) float warped pixel coordinates
+    """
+    a = -omega * (np.asarray(t, dtype=float) - t_ref)
+    dx, dy = np.asarray(x, dtype=float) - center[0], np.asarray(y, dtype=float) - center[1]
+    ca, sa = np.cos(a), np.sin(a)
+    return center[0] + ca * dx - sa * dy, center[1] + sa * dx + ca * dy
+
+
+def cmax_rotation_2d(x, y, t, center, t_ref, omegas, sigma=1.0, refine=True):
+    """Constant in-plane angular velocity maximizing the IWE variance under `rotation_warp_2d`.
+
+    The contrast is evaluated on the grid `omegas`; with `refine`, the best grid point is
+    refined by bounded scalar minimization (Brent) between its two grid neighbours. The
+    IWE canvas is the square around `center` that holds every event at any rotation.
+
+    Parameters
+    ----------
+    x, y : (N,) pixel coordinates
+    t : (N,) event times, seconds
+    center : (cx, cy) rotation center, pixels
+    t_ref : reference time, seconds
+    omegas : (K,) increasing grid of angular velocities, rad/s (both signs to search both
+        rotation directions)
+    sigma : Gaussian blur of the IWE, pixels
+    refine : refine the best grid point
+
+    Returns
+    -------
+    omega : best angular velocity, rad/s
+    contrasts : (K,) IWE variance at each grid point
+    """
+    from scipy.optimize import minimize_scalar
+
+    omegas = np.asarray(omegas, dtype=float)
+    r = int(np.ceil(np.hypot(np.asarray(x) - center[0], np.asarray(y) - center[1]).max())) + 2
+    canvas, origin = (2 * r + 1, 2 * r + 1), (int(np.floor(center[0])) - r, int(np.floor(center[1])) - r)
+    f = lambda w: contrast(iwe_from_coords(*rotation_warp_2d(x, y, t, w, center, t_ref), canvas, origin, sigma))
+    contrasts = np.array([f(w) for w in omegas])
+    k = int(contrasts.argmax())
+    omega = omegas[k]
+    if refine and len(omegas) > 1:
+        lo, hi = omegas[max(k - 1, 0)], omegas[min(k + 1, len(omegas) - 1)]
+        res = minimize_scalar(lambda w: -f(w), bounds=(lo, hi), method="bounded",
+                              options={"xatol": 1e-3 * (hi - lo)})
+        if -res.fun > contrasts[k]:
+            omega = float(res.x)
+    return float(omega), contrasts
