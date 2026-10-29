@@ -20,6 +20,9 @@ the narrative on top of it and run both locally and on Google Colab.
 | [`05_star_cmax.ipynb`](notebooks/05_star_cmax.ipynb) | One global velocity by contrast maximization on a rotating star field (Chin et al., CVPRW 2019; Stellarium on a screen), compared with the ground-truth rotation. |
 | [`06_event_generation.ipynb`](notebooks/06_event_generation.ipynb) | How brightness change becomes events: ESIM-style simulation from a 240 fps iPhone slow-motion clip of a fidget spinner, compared with the DAVIS346 recording of the same spinner (hand-picked motion start, side-by-side event images, event rate per pixel). |
 | [`07_reconstruction.ipynb`](notebooks/07_reconstruction.ipynb) | Reconstruction from events only (direct integration, high-pass filter, E2VID stub) on simulated events and one REBlur sample. Unpolished, moved from the old notebook 06. |
+| [`08_spinner_rotation.ipynb`](notebooks/08_spinner_rotation.ipynb) | Rotation speed of a fidget spinner from DAVIS346 events by two methods: rotation CMax and the event-rate spectrum (harmonic product spectrum), compared over the spin-down. |
+
+Signed event images use `bwr` with ON − OFF: red = ON (brighter), blue = OFF (darker).
 
 ## Repo layout
 
@@ -27,7 +30,7 @@ the narrative on top of it and run both locally and on Google Colab.
 evcam/                  installable package
   io.py                 load_aedat4, crop_time, frames_look_accumulated, DSEC, REBlur and star dataset loading
   representations.py    time surface, signed event image, SCER (EFNet's event representation)
-  cmax.py               iwe, contrast, cmax_patch, patchwise_flow
+  cmax.py               iwe, contrast, cmax_patch, patchwise_flow, cmax_rotation, cmax_rotation_2d
   deblur.py             EDI (edi_deblur, edi_select_c), cmax_deblur (CMax + Richardson-Lucy), efnet_deblur
   deblur_eval.py        REBlur test-split evaluation loop with caching
   efnet_arch.py         EFNet model, vendored from github.com/AHupuJR/EFNet (Apache 2.0)
@@ -36,7 +39,7 @@ evcam/                  installable package
   simulate.py           simulate_events (ESIM-style), make_blur_triplet
   reconstruct.py        direct_integration, highpass_filter (Scheerlinck et al. 2018), fit_scale_offset
   metrics.py            EPE / 3PE, PSNR / SSIM
-  viz.py                flow_to_rgb, show_images, busiest_crop
+  viz.py                flow_to_rgb, show_images, busiest_crop, show_events (signed event images)
 notebooks/              the notebooks listed above
 scripts/download_data.py   DSEC (default), REBlur (`reblur`) and star tracking (`stars`)
 tests/                  pytest tests for EDI, SCER, the deconvolution baseline, frequency estimation, sources, simulation and reconstruction
@@ -94,6 +97,7 @@ https://colab.research.google.com/github/allusson/event-perception/blob/main/not
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/05_star_cmax.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/06_event_generation.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/07_reconstruction.ipynb
+https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/08_spinner_rotation.ipynb
 ```
 
 The first code cell clones the repo into the Colab session, changes into it, and runs
