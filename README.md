@@ -22,6 +22,7 @@ the narrative on top of it and run both locally and on Google Colab.
 | [`07_reconstruction.ipynb`](notebooks/07_reconstruction.ipynb) | Reconstruction from events only (direct integration, high-pass filter, E2VID stub) on simulated events and one REBlur sample. Unpolished, moved from the old notebook 06. |
 | [`08_spinner_rotation.ipynb`](notebooks/08_spinner_rotation.ipynb) | Rotation speed of a fidget spinner from DAVIS346 events by two methods: rotation CMax and the event-rate spectrum (harmonic product spectrum), compared over the spin-down. |
 | [`09_event_synthesis_diffusion.ipynb`](notebooks/09_event_synthesis_diffusion.ipynb) | Event images generated with the pretrained ControlEvents diffusion models (Hu et al., WACV 2026): from text (compared with plain Stable Diffusion), from a 2D skeleton (dataset samples and one's own photo through OpenPose) and from an SMPL normal map. Demo of released weights, no training. Downloads about 16 GB of weights on first run; use a Colab GPU runtime. |
+| [`10_real_sim_generated.ipynb`](notebooks/10_real_sim_generated.ipynb) | One recorded human action (wave, leg raise, walk) as three kinds of event data: real DAVIS346 events, ESIM-style events simulated from a 240 fps phone clip (notebook 06), and ControlEvents images generated from the OpenPose skeleton of each phone frame (notebook 09). Side-by-side grid and animation, fixed vs per-frame diffusion noise, and the share of events near the arms vs the legs. Generation needs a Colab GPU runtime; images are cached next to the data. See "Human actions" under Data. |
 
 Signed event images use `bwr` with ON − OFF: red = ON (brighter), blue = OFF (darker).
 
@@ -41,6 +42,7 @@ evcam/                  installable package
   reconstruct.py        direct_integration, highpass_filter (Scheerlinck et al. 2018), fit_scale_offset
   metrics.py            EPE / 3PE, PSNR / SSIM
   viz.py                flow_to_rgb, show_images, busiest_crop, show_events (signed event images)
+  controlevents.py      ControlEvents pipelines, OpenPose -> 13 joints, skeleton drawing, image-to-canvas mapping
 notebooks/              the notebooks listed above
 scripts/download_data.py   DSEC (default), REBlur (`reblur`) and star tracking (`stars`)
 tests/                  pytest tests for EDI, SCER, the deconvolution baseline, frequency estimation, sources, simulation and reconstruction
@@ -66,6 +68,7 @@ From the repo root:
 uv venv --python 3.12        # or: python3.12 -m venv .venv
 source .venv/bin/activate
 uv pip install -e ".[deblur,dev]"   # deblur: torch + einops for notebook 03; dev: pytest. Plain `pip` works too
+uv pip install -e ".[diffusion]"    # notebooks 09 and 10: diffusers, transformers, controlnet_aux, ...
 uv pip install pip jupyterlab        # or use the VS Code notebook editor with the .venv kernel
 ```
 
@@ -100,10 +103,12 @@ https://colab.research.google.com/github/allusson/event-perception/blob/main/not
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/07_reconstruction.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/08_spinner_rotation.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/09_event_synthesis_diffusion.ipynb
+https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/10_real_sim_generated.ipynb
 ```
 
 The first code cell clones the repo into the Colab session, changes into it, and runs
-`pip install -e .`.
+`pip install -e .` (notebooks 09 and 10: `pip install -e ".[diffusion]"`). Notebook 10 also
+mounts Google Drive for its data (see "Human actions" below).
 
 ## Data
 
@@ -147,9 +152,18 @@ tests/                  pytest tests for EDI, SCER and the deconvolution baselin
   image the authors generated, not a recording. The weights (about 16 GB: the ControlEvents UNets and
   ControlNets plus VAE, text encoder and UNet from Stable Diffusion 1.4 / 1.5) go to
   `weights/controlevents/`. ControlEvents weights and data are MIT; Stable Diffusion weights are
-  CreativeML OpenRAIL-M. Locally the notebook also needs
-  `pip install diffusers transformers accelerate safetensors controlnet_aux huggingface_hub`.
+  CreativeML OpenRAIL-M. Locally the notebook also needs `pip install -e ".[diffusion]"`.
   For the own-pose cell, put a photo at `data/controlevents/own_pose.jpg`.
+- **Human actions for notebook 10**: for each action `wave`, `legraise`, `walk`, a DAVIS346
+  recording with events and APS frames, `<action>.aedat4`, and an iPhone slow-motion clip (240 fps,
+  trimmed) filmed from right next to the DAVIS at the same time, `<action>.mov` (or `.mp4`). In both,
+  the person stands still for about 1 s, does the action for a few seconds and stops; whole body in
+  frame, plain background, non-flickering light. Locally put them in `data/human/`; for Colab put
+  them in Google Drive under `MyDrive/event-perception-data/human/` (the notebook mounts Drive).
+  Generated images, OpenPose keypoints and `comparison.gif` are cached in `cache/<action>/` next to
+  the recordings. Generation needs a GPU: use a Colab GPU runtime (about 30 s per image on Apple
+  silicon). Per action, set the motion start (`VIDEO_START_FRAME`, `DAVIS_START_MS`) and optionally
+  the crop boxes in section 0, from the previews in section 2.
 - **N-MNIST**, optional in notebook 01: downloaded automatically by Tonic into `data/`.
 - **Our own DAVIS346 recordings** (`.aedat4`), used by notebook 01: copy them into `data/`, e.g.
   `data/digit4.aedat4`. Notebook 04 expects `data/propeller.aedat4` and skips its real-data
