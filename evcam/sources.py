@@ -208,10 +208,14 @@ FFMPEG_HINT = "ffmpeg -i input.MOV -c:v libx264 -crf 18 output.mp4"
 def load_video(path, capture_fps=None, t_start_s=0.0, duration_s=None, resize_to=(260, 346), linearize=True):
     """Read a video file as a grayscale, linear-intensity `Clip`.
 
-    Timestamps come from `capture_fps` when it is given, not from the container frame
-    rate: iPhone slow-motion files are often stored or exported at a playback rate (e.g.
-    30 fps) while the frames were captured at 240 fps, and the container rate would make
-    every time 8x too long. Both rates are printed.
+    Timestamps come from each frame's container timestamp (CAP_PROP_POS_MSEC), with the
+    smallest step between frames taken as one capture period, 1 / `capture_fps`. iPhone
+    slow-motion files store a slowed-down timeline (e.g. 240 fps capture on a 60 fps
+    timeline) and can drop frames, so steps are 1x, 2x, ... the smallest step; each frame
+    gets its capture index from those multiples and frame_t = index / capture_fps. Missing
+    frames are reported in one printed line. Clips with a constant step give the same
+    frame_t as a uniform 1 / capture_fps grid. `capture_fps` None uses the container rate
+    (or, for a clip with missing frames, the rate of the smallest step).
 
     Each frame is converted to float, linearized (inverse sRGB, if `linearize`), centre-
     cropped to the aspect ratio of `resize_to`, resized with area averaging and converted
@@ -233,37 +237,87 @@ def load_video(path, capture_fps=None, t_start_s=0.0, duration_s=None, resize_to
     if not os.path.exists(path):
         raise FileNotFoundError(f"{path} not found")
     cap = cv2.VideoCapture(path)
-    ok, frame = cap.read() if cap.isOpened() else (False, None)
-    if not ok:
+    ok = cap.grab() if cap.isOpened() else False
+    if not ok or cap.retrieve()[1] is None:
         cap.release()
         raise RuntimeError(f"OpenCV cannot decode {path} (iPhone HEVC is not supported by every OpenCV build). "
                            f"Convert it first: {FFMPEG_HINT}")
     container_fps = float(cap.get(cv2.CAP_PROP_FPS)) or None
-    fps = float(capture_fps) if capture_fps else container_fps
+    # pass 1: container timestamps of every frame
+    stamps_ms = []
+    while ok:
+        stamps_ms.append(cap.get(cv2.CAP_PROP_POS_MSEC))
+        ok = cap.grab()
+    cap.release()
+    index, n_missing, step_ms = frame_indices_from_timestamps(stamps_ms, path)
+    if capture_fps:
+        fps = float(capture_fps)
+    elif n_missing and step_ms:
+        fps = 1000.0 / step_ms
+    else:
+        fps = container_fps
     if not fps:
-        cap.release()
         raise ValueError(f"{path}: the container has no frame rate; pass capture_fps")
     print(f"{os.path.basename(path)}: container fps {container_fps}, capture fps used for timestamps {fps:g}")
+    if n_missing:
+        print(f"{path}: {n_missing} of {index[-1] + 1} frames missing (capture rate not constant); "
+              f"using per-frame timestamps")
 
     k0 = int(round(t_start_s * fps))
-    n_max = None if duration_s is None else int(round(duration_s * fps))
-    frames, k = [], 0
-    while ok:
-        if k >= k0:
-            frames.append(_video_frame(frame, resize_to, linearize))
-            if n_max is not None and len(frames) >= n_max:
-                break
-        ok, frame = cap.read()
-        k += 1
-    cap.release()
-    if not frames:
+    k1 = None if duration_s is None else k0 + int(round(duration_s * fps))
+    keep = (index >= k0) & (True if k1 is None else index < k1)
+    if not keep.any():
         raise ValueError(f"{path}: no frames after t_start_s = {t_start_s}")
+    # pass 2: decode the frames in the window
+    cap = cv2.VideoCapture(path)
+    last = int(np.flatnonzero(keep)[-1])
+    frames = []
+    for i in range(last + 1):
+        if not cap.grab():
+            break
+        if keep[i]:
+            frames.append(_video_frame(cap.retrieve()[1], resize_to, linearize))
+    cap.release()
     frames = np.stack(frames)
-    frame_t = np.round(np.arange(len(frames)) / fps * 1e6).astype(np.int64)
+    idx = index[keep][:len(frames)]
+    frame_t = np.round((idx - idx[0]) / fps * 1e6).astype(np.int64)
     meta = {"source": "video", "path": path, "fps": fps, "container_fps": container_fps,
-            "t_start_s": t_start_s, "linearized": linearize,
-            "notes": "exposure unknown; frame_t from capture_fps" if capture_fps else "exposure unknown"}
+            "t_start_s": t_start_s, "linearized": linearize, "frames_missing": int(n_missing),
+            "notes": "exposure unknown; frame_t from per-frame container timestamps, "
+                     "smallest step = 1 / fps"}
     return Clip(frames=frames, frame_t=frame_t, exposure=None, events=None, shape=frames.shape[1:], meta=meta)
+
+
+def frame_indices_from_timestamps(stamps_ms, path="video", max_bad_fraction=0.01, tol_fraction=0.15):
+    """Capture index of every frame from its container timestamp.
+
+    The smallest positive step between consecutive timestamps is one capture period; every
+    step is rounded to a whole number of periods (1 when nothing is missing) and the
+    indices are the running sum, starting at 0. Container timestamps are quantized (the
+    QuickTime timescale of 600 gives 1.667 ms ticks, so a 16.7 ms period shows up as
+    16.667 and occasionally 18.333 ms), so a step counts as off-grid only when it is more
+    than max(0.5 ms, `tol_fraction` of a period) from a whole multiple; more than
+    `max_bad_fraction` off-grid steps raise a ValueError.
+
+    Returns (index int64 array, number of missing frames, smallest step in ms or None).
+    A backend that reports no timestamps (all equal) gives a uniform index.
+    """
+    t = np.asarray(stamps_ms, np.float64)
+    n = len(t)
+    if n < 2 or np.all(t == t[0]):
+        return np.arange(n, dtype=np.int64), 0, None
+    d = np.diff(t)
+    if np.any(d <= 0):
+        raise ValueError(f"{path}: container timestamps are not increasing "
+                         f"(steps {d.min():.3f} to {d.max():.3f} ms)")
+    step = d.min()
+    mult = np.maximum(np.round(d / step), 1)
+    off = np.abs(d - mult * step) > max(0.5, tol_fraction * step)
+    if off.mean() > max_bad_fraction:
+        raise ValueError(f"{path}: frame steps are not whole multiples of the smallest step "
+                         f"(steps {d.min():.3f} to {d.max():.3f} ms, {off.sum()} of {len(d)} off)")
+    index = np.concatenate([[0], np.cumsum(mult)]).astype(np.int64)
+    return index, int(index[-1] + 1 - n), float(step)
 
 
 def _video_frame(bgr, resize_to, linearize):

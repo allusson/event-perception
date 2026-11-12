@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import pytest
 
-from evcam.sources import load_video, srgb_to_linear, synthetic_video
+from evcam.sources import frame_indices_from_timestamps, load_video, srgb_to_linear, synthetic_video
 
 
 def test_synthetic_video_deterministic_shape_and_timestamps():
@@ -55,3 +55,33 @@ def test_load_video_unreadable(tmp_path):
     bad.write_bytes(b"not a video")
     with pytest.raises(RuntimeError, match="ffmpeg -i input.MOV"):
         load_video(str(bad))
+
+
+def test_frame_indices_uniform_timestamps():
+    stamps = np.arange(20) * 1000 / 30                       # 30 fps timeline
+    index, n_missing, step = frame_indices_from_timestamps(stamps)
+    np.testing.assert_array_equal(index, np.arange(20))
+    assert n_missing == 0 and step == pytest.approx(1000 / 30)
+    # frame_t as load_video computes it equals the old uniform grid
+    np.testing.assert_array_equal(np.round(index / 240 * 1e6).astype(np.int64),
+                                  np.round(np.arange(20) / 240 * 1e6).astype(np.int64))
+
+
+def test_frame_indices_missing_frames():
+    # 240 fps capture on a 60 fps timeline, stored in 1/600 s ticks; frames 2, 5, 6 missing,
+    # and one step quantized a tick long (18.333 ms) as in iPhone slow-motion files
+    captured = np.array([0, 1, 3, 4, 7, 8, 9])
+    stamps = np.round(captured * 10) / 0.6                   # ms, multiples of 1/600 s
+    stamps[5:] += 1000 / 600                                 # 8 - 7 shows up as 18.333 ms
+    index, n_missing, step = frame_indices_from_timestamps(stamps)
+    np.testing.assert_array_equal(index, captured)
+    assert n_missing == 3 and step == pytest.approx(1000 / 60)
+    np.testing.assert_array_equal(np.round(index / 240 * 1e6), np.round(captured / 240 * 1e6))
+
+
+def test_frame_indices_invalid_steps():
+    stamps = np.cumsum([0] + [10.0, 15.0] * 10)              # 1.5x steps: not whole multiples
+    with pytest.raises(ValueError, match="clip.mov.*10.000 to 15.000 ms"):
+        frame_indices_from_timestamps(stamps, "clip.mov")
+    with pytest.raises(ValueError, match="not increasing"):
+        frame_indices_from_timestamps([0, 10, 10, 20], "clip.mov")
