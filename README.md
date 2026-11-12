@@ -18,13 +18,30 @@ the narrative on top of it and run both locally and on Google Colab.
 | [`03_deblurring_cmax_edi_efnet.ipynb`](notebooks/03_deblurring_cmax_edi_efnet.ipynb) | Motion deblurring with events on REBlur: CMax + Richardson-Lucy, EDI, and pretrained EFNet, compared by PSNR / SSIM. |
 | [`04_frequency_estimation.ipynb`](notebooks/04_frequency_estimation.ipynb) | Frequency estimation from events (event-rate spectrum, per-pixel interval map) on synthetic flicker and on a DAVIS346 propeller recording. |
 | [`05_star_cmax.ipynb`](notebooks/05_star_cmax.ipynb) | One global velocity by contrast maximization on a rotating star field (Chin et al., CVPRW 2019; Stellarium on a screen), compared with the ground-truth rotation. |
-| [`06_event_generation.ipynb`](notebooks/06_event_generation.ipynb) | How brightness change becomes events: ESIM-style simulation from a 240 fps iPhone slow-motion clip of a fidget spinner, compared with the DAVIS346 recording of the same spinner (hand-picked motion start, side-by-side event images, event rate per pixel). |
+| [`06_event_generation.ipynb`](notebooks/06_event_generation.ipynb) | How brightness change becomes events: ESIM-style simulation from a 240 fps iPhone slow-motion clip of a fidget spinner, compared with the DAVIS346 recording of the same spinner (automatic time alignment, side-by-side event images, event rate per pixel). |
 | [`07_reconstruction.ipynb`](notebooks/07_reconstruction.ipynb) | Reconstruction from events only (direct integration, high-pass filter, E2VID stub) on simulated events and one REBlur sample. Unpolished, moved from the old notebook 06. |
 | [`08_spinner_rotation.ipynb`](notebooks/08_spinner_rotation.ipynb) | Rotation speed of a fidget spinner from DAVIS346 events by two methods: rotation CMax and the event-rate spectrum (harmonic product spectrum), compared over the spin-down. |
 | [`09_event_synthesis_diffusion.ipynb`](notebooks/09_event_synthesis_diffusion.ipynb) | Event images generated with the pretrained ControlEvents diffusion models (Hu et al., WACV 2026): from text (compared with plain Stable Diffusion), from a 2D skeleton (dataset samples and one's own photo through OpenPose) and from an SMPL normal map. Demo of released weights, no training. Downloads about 16 GB of weights on first run; use a Colab GPU runtime. |
 | [`10_real_sim_generated.ipynb`](notebooks/10_real_sim_generated.ipynb) | One recorded human action (wave, leg raise, walk) as three kinds of event data: real DAVIS346 events, ESIM-style events simulated from a 240 fps phone clip (notebook 06), and ControlEvents images generated from the OpenPose skeleton of each phone frame (notebook 09). Side-by-side grid and animation, fixed vs per-frame diffusion noise, and the share of events near the arms vs the legs. Generation needs a Colab GPU runtime; images are cached next to the data. See "Human actions" under Data. |
 
 Signed event images use `bwr` with ON − OFF: red = ON (brighter), blue = OFF (darker).
+
+## Using the notebooks
+
+Notebooks 06, 08 and 10 share one pattern:
+
+1. Set the inputs in the configuration cell at the top (section 0), the only cell to edit:
+   file paths or the action name first, then overrides. An override left as `None` is found
+   automatically; each one says in its comment where to read a manual value from.
+2. The checklist cell under it prints the files found (or the expected path), every value used
+   with its source (`auto` or `manual`) and which sections will run.
+3. Run all.
+
+A missing data file prints `SKIPPED: <path> not found`; an invalid setting raises an error that
+names it and gives an example. `SYNC` aligns a phone clip with a DAVIS recording by hand:
+`(t_phone_s, t_davis_s)`, one moment that is the same in both clips, both in seconds on each
+clip's own clock (read off the event-rate plots of the alignment section). With `SYNC = None`
+the offset comes from the cross-correlation of the two event rates (`evcam/align.py`).
 
 ## Repo layout
 
@@ -43,9 +60,10 @@ evcam/                  installable package
   metrics.py            EPE / 3PE, PSNR / SSIM
   viz.py                flow_to_rgb, show_images, busiest_crop, show_events (signed event images)
   controlevents.py      ControlEvents pipelines, OpenPose -> 13 joints, skeleton drawing, image-to-canvas mapping
+  align.py              phone / DAVIS alignment: sync_by_event_rate, motion_start, map_by_keypoints, map_by_features
 notebooks/              the notebooks listed above
 scripts/download_data.py   DSEC (default), REBlur (`reblur`) and star tracking (`stars`)
-tests/                  pytest tests for EDI, SCER, the deconvolution baseline, frequency estimation, sources, simulation and reconstruction
+tests/                  pytest tests for EDI, SCER, the deconvolution baseline, frequency estimation, sources, simulation, reconstruction and alignment
 docs/                   DV setup tutorial and paper notes (placeholders)
 data/                   recordings and datasets (not in git)
 weights/                pretrained model weights (not in git)
@@ -134,10 +152,11 @@ tests/                  pytest tests for EDI, SCER and the deconvolution baselin
   Notebook 03 also needs the pretrained checkpoint at `weights/EFNet-REBlur.pth`. It is hosted on
   Google Drive and has to be downloaded by hand: use the "pretrained model" link under REBlur in
   the [EFNet README](https://github.com/AHupuJR/EFNet). `weights/` is gitignored.
-- **Fidget spinner recording for notebook 06**: one session filmed at the same time by an iPhone
-  (240 fps slow motion) and the DAVIS346, side by side. The phone clip goes in
-  `data/video_data/spinner.mov` (or `.mp4`, then set `VIDEO_PATH`), the DAVIS clip in
-  `data/davis_data/spinner.aedat4`. Notebook 03's own-data cell also reads the DAVIS clip. If
+- **Fidget spinner recordings for notebooks 06 and 08**: three sessions, each filmed at the same
+  time by an iPhone (240 fps slow motion) and the DAVIS346, side by side. The phone clips go in
+  `data/video_data/spinner1.mov` to `spinner3.mov` (or `.mp4`, then set `VIDEO_PATH`), the DAVIS
+  clips in `data/davis_data/spinner1.aedat4` to `spinner3.aedat4`. Notebook 06 uses spinner1 by
+  default, notebook 08 any of the DAVIS clips; notebook 03's own-data cell also reads one. If
   OpenCV cannot decode an iPhone HEVC file, convert it first with
   `ffmpeg -i input.MOV -c:v libx264 -crf 18 output.mp4`.
 - **Star tracking** (Chin et al., CVPRW 2019), used by notebook 05: the original archive (about
@@ -161,9 +180,10 @@ tests/                  pytest tests for EDI, SCER and the deconvolution baselin
   frame, plain background, non-flickering light. Locally put them in `data/human/`; for Colab put
   them in Google Drive under `MyDrive/event-perception-data/human/` (the notebook mounts Drive).
   Generated images, OpenPose keypoints and `comparison.gif` are cached in `cache/<action>/` next to
-  the recordings. Generation needs a GPU: use a Colab GPU runtime (about 30 s per image on Apple
-  silicon). Per action, set the motion start (`VIDEO_START_FRAME`, `DAVIS_START_MS`) and optionally
-  the crop boxes in section 0, from the previews in section 2.
+  the recordings, per crop and analysis window. Generation needs a GPU: use a Colab GPU runtime
+  (about 70 s per image on Apple silicon). The time alignment, the motion start and the crops are
+  automatic; set `SYNC` only if the checklist says the alignment is not reliable and the curves do
+  not line up.
 - **N-MNIST**, optional in notebook 01: downloaded automatically by Tonic into `data/`.
 - **Our own DAVIS346 recordings** (`.aedat4`), used by notebook 01: copy them into `data/`, e.g.
   `data/digit4.aedat4`. Notebook 04 expects `data/propeller.aedat4` and skips its real-data
