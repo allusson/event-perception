@@ -22,13 +22,14 @@ the narrative on top of it and run both locally and on Google Colab.
 | [`07_reconstruction.ipynb`](notebooks/07_reconstruction.ipynb) | Reconstruction from events only (direct integration, high-pass filter, E2VID stub) on simulated events and one REBlur sample. Unpolished, moved from the old notebook 06. |
 | [`08_spinner_rotation.ipynb`](notebooks/08_spinner_rotation.ipynb) | Rotation speed of a fidget spinner from DAVIS346 events by two methods: rotation CMax and the event-rate spectrum (harmonic product spectrum), compared over the spin-down. |
 | [`09_event_synthesis_diffusion.ipynb`](notebooks/09_event_synthesis_diffusion.ipynb) | Event images generated with the pretrained ControlEvents diffusion models (Hu et al., WACV 2026): from text (compared with plain Stable Diffusion), from a 2D skeleton (dataset samples and one's own photo through OpenPose) and from an SMPL normal map. Demo of released weights, no training. Downloads about 16 GB of weights on first run; use a Colab GPU runtime. |
-| [`10_real_sim_generated.ipynb`](notebooks/10_real_sim_generated.ipynb) | One recorded human action (wave, leg raise, walk) as three kinds of event data: real DAVIS346 events, ESIM-style events simulated from a 240 fps phone clip (notebook 06), and ControlEvents images generated from the OpenPose skeleton of each phone frame (notebook 09). Side-by-side grid and animation, fixed vs per-frame diffusion noise, and the share of events near the arms vs the legs. Generation needs a Colab GPU runtime; images are cached next to the data. See "Human actions" under Data. |
+| [`10_real_sim_generated.ipynb`](notebooks/10_real_sim_generated.ipynb) | One recorded human action (wave, leg raise, walk) as three kinds of event data: real DAVIS346 events, ESIM-style events simulated from a 240 fps phone clip (notebook 06), and ControlEvents images generated from the OpenPose skeleton of each phone frame (notebook 09). Side-by-side grid and animation, fixed vs per-frame diffusion noise, and the share of events near the arms vs the legs. Generation needs a Colab GPU runtime; images are cached next to the data. See "Human actions" under Data. Saves `results.npz` (images, keypoints, event counts, mapping) that notebook 11 reads. |
+| [`11_evaluating_event_data.ipynb`](notebooks/11_evaluating_event_data.ipynb) | How close simulated and generated event data are to real event data of the same motion, from notebook 10's `results.npz` (no GPU, runs in seconds): temporal correlation of the event counts, Chamfer distance and tolerant F1 of the event pixels (whole canvas and person region), motion selectivity (event density on moving vs still limbs), background level and KID. |
 
 Signed event images use `bwr` with ON − OFF: red = ON (brighter), blue = OFF (darker).
 
 ## Using the notebooks
 
-Notebooks 06, 08 and 10 share one pattern:
+Notebooks 06, 08, 10 and 11 share one pattern:
 
 1. Set the inputs in the configuration cell at the top (section 0), the only cell to edit:
    file paths or the action name first, then overrides. An override left as `None` is found
@@ -57,13 +58,13 @@ evcam/                  installable package
   sources.py            Clip bundle and loaders (synthetic video, video files, DAVIS, REBlur), SOURCES registry
   simulate.py           simulate_events (ESIM-style), make_blur_triplet
   reconstruct.py        direct_integration, highpass_filter (Scheerlinck et al. 2018), fit_scale_offset
-  metrics.py            EPE / 3PE, PSNR / SSIM
+  metrics.py            EPE / 3PE, PSNR / SSIM, event images: Chamfer distance, tolerant F1, motion selectivity
   viz.py                flow_to_rgb, show_images, busiest_crop, show_events (signed event images)
   controlevents.py      ControlEvents pipelines, OpenPose -> 13 joints, skeleton drawing, image-to-canvas mapping
   align.py              phone / DAVIS alignment: sync_by_event_rate, motion_start, map_by_keypoints, map_by_features
 notebooks/              the notebooks listed above
 scripts/download_data.py   DSEC (default), REBlur (`reblur`) and star tracking (`stars`)
-tests/                  pytest tests for EDI, SCER, the deconvolution baseline, frequency estimation, sources, simulation, reconstruction and alignment
+tests/                  pytest tests for EDI, SCER, the deconvolution baseline, frequency estimation, sources, simulation, reconstruction, alignment and the event image metrics
 docs/                   DV setup tutorial and paper notes (placeholders)
 data/                   recordings and datasets (not in git)
 weights/                pretrained model weights (not in git)
@@ -86,7 +87,7 @@ From the repo root:
 uv venv --python 3.12        # or: python3.12 -m venv .venv
 source .venv/bin/activate
 uv pip install -e ".[deblur,dev]"   # deblur: torch + einops for notebook 03; dev: pytest. Plain `pip` works too
-uv pip install -e ".[diffusion]"    # notebooks 09 and 10: diffusers, transformers, controlnet_aux, ...
+uv pip install -e ".[diffusion]"    # notebooks 09 to 11: diffusers, transformers, controlnet_aux, torchmetrics, ...
 uv pip install pip jupyterlab        # or use the VS Code notebook editor with the .venv kernel
 ```
 
@@ -122,6 +123,7 @@ https://colab.research.google.com/github/allusson/event-perception/blob/main/not
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/08_spinner_rotation.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/09_event_synthesis_diffusion.ipynb
 https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/10_real_sim_generated.ipynb
+https://colab.research.google.com/github/allusson/event-perception/blob/main/notebooks/11_evaluating_event_data.ipynb
 ```
 
 The first code cell clones the repo into the Colab session, changes into it, and runs
